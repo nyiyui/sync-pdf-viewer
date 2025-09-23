@@ -123,13 +123,20 @@
         let currentPage = 1;
         let totalPages = 1;
         let isAuthenticated = false;
+        let currentPassphrase = null;
 
         function authenticate() {
             const passphrase = document.getElementById('passphraseInput').value;
+            currentPassphrase = passphrase;
             socket.emit('presenter_auth', { passphrase });
         }
 
         function uploadPDF() {
+            if (!isAuthenticated || !currentPassphrase) {
+                showStatus('Please authenticate first', 'error');
+                return;
+            }
+
             const fileInput = document.getElementById('pdfFile');
             const file = fileInput.files[0];
             
@@ -140,6 +147,7 @@
 
             const formData = new FormData();
             formData.append('pdf', file);
+            formData.append('passphrase', currentPassphrase);
 
             fetch('/upload', {
                 method: 'POST',
@@ -152,7 +160,7 @@
                     loadPDF(data.pdfUrl);
                     showStatus(`PDF "${data.filename}" uploaded successfully`, 'success');
                 } else {
-                    showStatus('Failed to upload PDF', 'error');
+                    showStatus('Failed to upload PDF: ' + (data.error || 'Unknown error'), 'error');
                 }
             })
             .catch(error => {

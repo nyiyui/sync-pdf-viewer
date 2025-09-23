@@ -54,6 +54,12 @@ app.use('/uploads', express.static('uploads'));
 app.use(express.json());
 
 app.post('/upload', upload.single('pdf'), (req, res) => {
+  // Verify passphrase
+  const providedPassphrase = req.body.passphrase;
+  if (providedPassphrase !== passphrase) {
+    return res.status(401).json({ error: 'Invalid passphrase' });
+  }
+
   if (!req.file) {
     return res.status(400).json({ error: 'No PDF file uploaded' });
   }
