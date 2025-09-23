@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PDF Presenter</title>
     <script src="/socket.io/socket.io.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -162,14 +163,38 @@
         function loadPDF(url) {
             currentPdfUrl = url;
             currentPage = 1;
+            totalPages = '?'; // Will be updated after PDF loads
             
-            // For iframe display, we'll estimate total pages as unknown
-            // The user can navigate beyond if there are more pages
-            totalPages = '?';
+            // Use PDF.js to get page count only
+            pdfjsLib.getDocument(url).promise.then(pdf => {
+                totalPages = pdf.numPages;
+                console.log('PDF loaded with', totalPages, 'pages');
+                updatePageInfo();
+                updateButtons();
+                
+                // Send PDF info including page count to viewers
+                socket.emit('set_pdf', { 
+                    pdfUrl: url, 
+                });
+            }).catch(error => {
+                console.error('Error loading PDF for page count:', error);
+                showStatus('Error analyzing PDF: ' + error.message, 'error');
+                totalPages = 1; // Fallback
+            });
             
+            // Set up iframe display
             const iframe = document.getElementById('pdfFrame');
             iframe.src = url + '#page=' + currentPage;
             iframe.style.display = 'block';
+            
+            // Add error handling for iframe
+            iframe.onload = function() {
+                console.log('PDF iframe loaded successfully');
+            };
+            
+            iframe.onerror = function() {
+                showStatus('Error loading PDF in viewer', 'error');
+            };
             
             updatePageInfo();
             updateButtons();
@@ -177,6 +202,12 @@
 
         function renderPage(pageNum) {
             if (!currentPdfUrl) return;
+            
+            // Validate page number against actual PDF page count
+            if (pageNum < 1 || (totalPages !== '?' && pageNum > totalPages)) {
+                showStatus(`Invalid page number: ${pageNum}. Valid range: 1-${totalPages}`, 'error');
+                return;
+            }
             
             const iframe = document.getElementById('pdfFrame');
             iframe.src = currentPdfUrl + '#page=' + pageNum;
@@ -192,7 +223,10 @@
         }
 
         function nextPage() {
-            // Since we don't know total pages with iframe, allow unlimited forward navigation
+            if (totalPages !== '?' && currentPage >= totalPages) {
+                showStatus(`Already at last page (${totalPages})`, 'error');
+                return;
+            }
             currentPage++;
             renderPage(currentPage);
             socket.emit('page_change', { page: currentPage });
@@ -204,26 +238,36 @@
             const pageInput = document.getElementById('pageInput');
             const page = parseInt(pageInput.value);
             
-            if (page >= 1) {
+            const maxPage = totalPages === '?' ? 9999 : totalPages;
+            if (page >= 1 && page <= maxPage) {
                 currentPage = page;
                 renderPage(currentPage);
                 socket.emit('page_change', { page: currentPage });
                 updatePageInfo();
                 updateButtons();
                 pageInput.value = '';
+            } else {
+                showStatus(`Please enter a valid page number (1-${maxPage})`, 'error');
+                pageInput.value = '';
             }
         }
 
         function updatePageInfo() {
-            document.getElementById('pageInfo').textContent = `Page ${currentPage}`;
-            // Remove max constraint since we don't know total pages
-            document.getElementById('pageInput').removeAttribute('max');
+            const pageText = totalPages === '?' ? `Page ${currentPage}` : `Page ${currentPage} of ${totalPages}`;
+            document.getElementById('pageInfo').textContent = pageText;
+            
+            // Update input constraints
+            const pageInput = document.getElementById('pageInput');
+            if (totalPages !== '?') {
+                pageInput.max = totalPages;
+            } else {
+                pageInput.max = 9999;
+            }
         }
 
         function updateButtons() {
             document.getElementById('prevBtn').disabled = currentPage <= 1;
-            // Don't disable next button since we don't know total pages
-            document.getElementById('nextBtn').disabled = false;
+            document.getElementById('nextBtn').disabled = (totalPages !== '?' && currentPage >= totalPages);
         }
 
         function showStatus(message, type) {

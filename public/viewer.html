@@ -167,6 +167,15 @@
             iframe.src = url + '#page=' + currentPage;
             iframe.style.display = 'block';
             
+            // Add error handling for invalid PDFs
+            iframe.onload = function() {
+                console.log('PDF iframe loaded successfully');
+            };
+            
+            iframe.onerror = function() {
+                updateStatus('Error loading PDF', 'error');
+            };
+            
             document.getElementById('waitingMessage').style.display = 'none';
             document.getElementById('pageInfo').style.display = 'block';
             
@@ -178,7 +187,7 @@
             // Show sync controls
             document.getElementById('syncControls').style.display = 'block';
             
-            updateStatus('PDF loaded successfully', 'success');
+            updateStatus(`PDF loaded successfully (${totalPages} pages)`, 'success');
             updatePageInfo();
             updateSyncStatus();
         }
@@ -191,7 +200,7 @@
         }
 
         function updatePageInfo() {
-            document.getElementById('pageInfo').textContent = `Page ${currentPage}`;
+            document.getElementById('pageInfo').textContent = `Page ${currentPage} of ${totalPages}`;
         }
         
         function updateSyncStatus() {
@@ -249,20 +258,28 @@
 
         socket.on('pdf_update', (data) => {
             console.log('PDF update received:', data);
+            totalPages = data.totalPages || 1;
             loadPDF(data.pdfUrl, data.currentPage);
         });
 
         socket.on('page_update', (data) => {
             console.log('Page update received:', data);
             
+            // Update total pages if provided
+            if (data.totalPages) {
+                totalPages = data.totalPages;
+            }
+            
+            const pageNum = data.currentPage;
+            
             // Only sync if sync is enabled
             if (syncEnabled) {
-                currentPage = data.currentPage;
+                currentPage = pageNum;
                 renderPage(currentPage);
                 updatePageInfo();
-                updateStatus(`Moved to page ${currentPage}`, 'info');
+                updateStatus(`Moved to page ${currentPage} of ${totalPages}`, 'info');
             } else {
-                updateStatus(`Presenter moved to page ${data.currentPage} (sync disabled)`, 'info');
+                updateStatus(`Presenter moved to page ${pageNum} of ${totalPages} (sync disabled)`, 'info');
             }
         });
 
