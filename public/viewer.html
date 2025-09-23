@@ -159,9 +159,9 @@
         let currentPdfUrl = null;
         let syncEnabled = true;
 
-        function loadPDF(url) {
+        function loadPDF(url, page = 1) {
             currentPdfUrl = url;
-            currentPage = 1;
+            currentPage = page;
             
             const iframe = document.getElementById('pdfFrame');
             iframe.src = url + '#page=' + currentPage;
@@ -249,8 +249,7 @@
 
         socket.on('pdf_update', (data) => {
             console.log('PDF update received:', data);
-            currentPage = data.currentPage;
-            loadPDF(data.pdfUrl);
+            loadPDF(data.pdfUrl, data.currentPage);
         });
 
         socket.on('page_update', (data) => {
