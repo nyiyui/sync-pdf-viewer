@@ -157,6 +157,9 @@
         let currentPage = 1;
         let currentPdfUrl = null;
         let syncEnabled = true;
+        
+        // Detect Chrome browser
+        const isChrome = /Chrome/.test(navigator.userAgent) && /Google Inc/.test(navigator.vendor);
 
         function loadPDF(url, page = 1) {
             currentPdfUrl = url;
@@ -195,7 +198,23 @@
             if (!currentPdfUrl) return;
             
             const iframe = document.getElementById('pdfFrame');
-            iframe.src = currentPdfUrl + '#page=' + pageNum;
+            const newSrc = currentPdfUrl + '#page=' + pageNum;
+            
+            if (isChrome) {
+                // Update src first, then reload
+                iframe.src = newSrc;
+                try {
+                    iframe.contentWindow.location.reload();
+                } catch (e) {
+                    // Fallback if cross-origin restrictions prevent reload
+                    iframe.src = '';
+                    setTimeout(() => {
+                        iframe.src = newSrc;
+                    }, 10);
+                }
+            } else {
+                iframe.src = newSrc;
+            }
         }
 
         function updatePageInfo() {
