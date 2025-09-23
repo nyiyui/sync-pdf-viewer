@@ -91,12 +91,6 @@
               description = "Directory to store uploaded PDF files";
             };
 
-            openFirewall = mkOption {
-              type = types.bool;
-              default = false;
-              description = "Whether to open the firewall port";
-            };
-
             extraEnvironment = mkOption {
               type = types.attrsOf types.str;
               default = { };
@@ -160,8 +154,6 @@
                 chmod 755 ${cfg.dataDir}/uploads
               '';
             };
-
-            networking.firewall.allowedTCPPorts = mkIf cfg.openFirewall [ cfg.port ];
           };
         };
     in
