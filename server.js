@@ -84,6 +84,10 @@ app.get('/viewer', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'viewer.html'));
 });
 
+app.get('/viewer-pdfjs', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'viewer-pdfjs.html'));
+});
+
 io.on('connection', (socket) => {
   console.log(`📱 Client connected: ${socket.id}`);
 
