@@ -35,19 +35,6 @@
             position: relative;
             display: inline-block;
         }
-        .textLayer {
-            position: absolute;
-            width: 100%
-            height: 100%
-            text-align: initial;
-            inset: 0;
-            overflow: clip;
-            opacity: 1;
-            line-height: 1;
-            forced-color-adjust: none;
-            transform-origin: 0 0;
-            z-index: 0;
-        }
         .waiting {
             padding: 40px;
             text-align: center;
@@ -139,25 +126,24 @@
     </style>
 </head>
 <body>
-    <div class="connection-status" id="connectionStatus">Connecting...</div>
+    <div class="connection-status" id="connectionStatus">接続中…</div>
     
     <div class="status-bar">
-        <div id="statusMessage" class="status info">Waiting for presenter to share a PDF...</div>
-        <div id="pageInfo" class="page-info" style="display: none;"></div>
-        <a id="downloadLink" class="download-link" style="display: none;" download>📥 Download PDF</a>
+        <div id="statusMessage" class="status info">発表資料共有待機中</div>
+        <a id="downloadLink" class="download-link" style="display: none;" download>発表資料をダウンロード</a>
         <div class="sync-controls" style="display: none;" id="syncControls">
             <label>
                 <input type="checkbox" id="syncCheckbox" checked>
-                🔄 Sync with presenter
+                発表者ページ位置に同期
             </label>
         </div>
     </div>
 
     <div class="pdf-container">
         <div id="waitingMessage" class="waiting">
-            <h3>📄 No PDF loaded</h3>
-            <p>The presenter will control the PDF and page navigation.</p>
-            <p>You'll automatically see updates when they share a document.</p>
+            <h2>発表資料共有待機中</h2>
+            <p>発表者が発表資料をアップロードし、ページ前後を操作します。</p>
+            <p>発表資料共有次第、自動的に表示されます。</p>
         </div>
         <div id="pdfViewer" style="display: none;">
             <div class="pdf-page-container">
@@ -190,7 +176,7 @@
             currentPage = page;
             
             try {
-                updateStatus('Loading PDF...', 'info');
+                updateStatus('読込中', 'info');
                 
                 // Load the PDF document
                 pdfDoc = await pdfjsLib.getDocument(url).promise;
@@ -206,7 +192,6 @@
                 // Show the viewer
                 document.getElementById('waitingMessage').style.display = 'none';
                 document.getElementById('pdfViewer').style.display = 'block';
-                document.getElementById('pageInfo').style.display = 'block';
                 
                 // Show and configure download link
                 const downloadLink = document.getElementById('downloadLink');
@@ -216,13 +201,12 @@
                 // Show sync controls
                 document.getElementById('syncControls').style.display = 'block';
                 
-                updateStatus('PDF loaded successfully', 'success');
-                updatePageInfo();
+                updateStatus('発表資料読込み完了', 'success');
                 updateSyncStatus();
                 
             } catch (error) {
                 console.error('Error loading PDF:', error);
-                updateStatus('Error loading PDF: ' + error.message, 'error');
+                updateStatus('エラー: ' + error.message, 'error');
             }
         }
 
@@ -230,7 +214,7 @@
             if (!pdfDoc || !canvas) return;
             
             try {
-                updateStatus('Rendering page...', 'loading');
+                updateStatus('レンダリング中…', 'loading');
                 
                 // Get the page
                 const page = await pdfDoc.getPage(pageNum);
@@ -238,7 +222,7 @@
                 // Calculate scale to fit the container width while maintaining aspect ratio
                 const containerWidth = document.querySelector('.pdf-container').clientWidth - 40; // Account for padding
                 const viewport = page.getViewport({ scale: 1 });
-                const scale = Math.min(containerWidth / viewport.width, 1.5); // Max scale of 1.5 for readability
+                const scale = Math.min(containerWidth / viewport.width, 2);
                 
                 const scaledViewport = page.getViewport({ scale: scale });
                 
@@ -258,12 +242,11 @@
                 await renderTextLayer(page, scaledViewport);
                 
                 currentPage = pageNum;
-                updatePageInfo();
-                updateStatus(`Showing page ${currentPage}`, 'success');
+                updateStatus(`P. ${currentPage}`, 'success');
                 
             } catch (error) {
                 console.error('Error rendering page:', error);
-                updateStatus('Error rendering page: ' + error.message, 'error');
+                updateStatus('レンダリングエラー: ' + error.message, 'error');
             }
         }
 
@@ -297,12 +280,6 @@
                 console.error('Error rendering text layer:', error);
             }
         }
-
-        function updatePageInfo() {
-            if (pdfDoc) {
-                document.getElementById('pageInfo').textContent = `Page ${currentPage} of ${pdfDoc.numPages}`;
-            }
-        }
         
         function updateSyncStatus() {
             const statusBar = document.querySelector('.status-bar');
@@ -311,7 +288,7 @@
                 statusBar.classList.remove('sync-disabled');
             } else {
                 statusBar.classList.add('sync-disabled');
-                updateStatus('Sync disabled - you can navigate independently', 'info');
+                updateStatus('発表者の位置に関わらず、ページを前後できます', 'info');
             }
         }
         
@@ -320,9 +297,9 @@
             updateSyncStatus();
             
             if (syncEnabled) {
-                updateStatus('Sync enabled - following presenter', 'success');
+                updateStatus('発表者のページ位置に合わせる', 'info');
             } else {
-                updateStatus('Sync disabled - you can navigate independently', 'info');
+                updateStatus('発表者の位置に関わらず、ページを前後できます', 'info');
             }
         }
 
@@ -335,10 +312,10 @@
         function updateConnectionStatus(isConnected) {
             const statusDiv = document.getElementById('connectionStatus');
             if (isConnected) {
-                statusDiv.textContent = '🟢 Connected';
+                statusDiv.textContent = '接続済み';
                 statusDiv.className = 'connection-status connected';
             } else {
-                statusDiv.textContent = '🔴 Disconnected';
+                statusDiv.textContent = '切断';
                 statusDiv.className = 'connection-status disconnected';
             }
         }
@@ -348,13 +325,13 @@
             console.log('Connected to server');
             updateConnectionStatus(true);
             socket.emit('viewer_join');
-            updateStatus('Connected to presentation server', 'success');
+            updateStatus('サーバに接続済み', 'success');
         });
 
         socket.on('disconnect', () => {
             console.log('Disconnected from server');
             updateConnectionStatus(false);
-            updateStatus('Disconnected from server. Trying to reconnect...', 'error');
+            updateStatus('サーバ接続切断', 'error');
         });
 
         socket.on('pdf_update', (data) => {
@@ -370,9 +347,9 @@
             // Only sync if sync is enabled
             if (syncEnabled) {
                 renderPage(pageNum);
-                updateStatus(`Moved to page ${pageNum}`, 'info');
+                updateStatus(`P. ${pageNum}`, 'info');
             } else {
-                updateStatus(`Presenter moved to page ${pageNum} (sync disabled)`, 'info');
+                updateStatus(`発表者がP.${pageNum}に移動（同期オフ）`, 'info');
             }
         });
 
