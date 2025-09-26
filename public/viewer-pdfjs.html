@@ -123,6 +123,43 @@
             font-style: italic;
             color: #666;
         }
+        .annotationLayer {
+            position: absolute;
+            left: 0;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            overflow: hidden;
+            pointer-events: none;
+        }
+        .annotationLayer section {
+            position: absolute;
+            pointer-events: auto;
+        }
+        .annotationLayer .linkAnnotation {
+            background: rgba(255, 255, 0, 0.2);
+            border: 1px solid rgba(255, 255, 0, 0.5);
+            border-radius: 2px;
+        }
+        .annotationLayer .linkAnnotation:hover {
+            background: rgba(255, 255, 0, 0.4);
+            cursor: pointer;
+        }
+        .annotationLayer .textAnnotation,
+        .annotationLayer .highlightAnnotation {
+            background: rgba(255, 255, 0, 0.3);
+            border: 1px solid rgba(255, 255, 0, 0.8);
+        }
+        .annotationLayer .freeTextAnnotation {
+            background: rgba(255, 255, 255, 0.9);
+            border: 1px solid #ccc;
+            padding: 2px;
+        }
+        .annotationLayer .squareAnnotation,
+        .annotationLayer .circleAnnotation {
+            background: transparent;
+            border: 2px solid rgba(255, 0, 0, 0.8);
+        }
     </style>
 </head>
 <body>
@@ -149,6 +186,7 @@
             <div class="pdf-page-container">
                 <canvas id="pdfCanvas"></canvas>
                 <div id="textLayer" class="textLayer"></div>
+                <div id="annotationLayer" class="annotationLayer"></div>
             </div>
         </div>
     </div>
@@ -161,6 +199,7 @@
         let canvas = null;
         let ctx = null;
         let textLayer = null;
+        let annotationLayer = null;
 
         // Initialize PDF.js
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
@@ -169,6 +208,7 @@
             canvas = document.getElementById('pdfCanvas');
             ctx = canvas.getContext('2d');
             textLayer = document.getElementById('textLayer');
+            annotationLayer = document.getElementById('annotationLayer');
         }
 
         async function loadPDF(url, page = 1) {
@@ -241,6 +281,9 @@
                 // Render text layer for selection
                 await renderTextLayer(page, scaledViewport);
                 
+                // Render annotation layer for interactive elements
+                await renderAnnotationLayer(page, scaledViewport);
+                
                 currentPage = pageNum;
                 updateStatus(`P. ${currentPage}`, 'success');
                 
@@ -278,6 +321,109 @@
                 
             } catch (error) {
                 console.error('Error rendering text layer:', error);
+            }
+        }
+
+        async function renderAnnotationLayer(page, viewport) {
+            if (!annotationLayer) return;
+            
+            try {
+                // Clear previous annotation layer content
+                annotationLayer.innerHTML = '';
+                
+                // Get annotations from the page
+                const annotations = await page.getAnnotations();
+                
+                if (annotations.length === 0) return;
+                
+                // Set annotation layer dimensions and position to match canvas
+                annotationLayer.style.width = canvas.width + 'px';
+                annotationLayer.style.height = canvas.height + 'px';
+                
+                // Process each annotation
+                annotations.forEach((annotation, index) => {
+                    const element = document.createElement('section');
+                    element.style.position = 'absolute';
+                    
+                    // Transform annotation rect coordinates to canvas coordinates
+                    const rect = annotation.rect;
+                    if (rect && rect.length >= 4) {
+                        const [x1, y1, x2, y2] = rect;
+                        
+                        // PDF coordinates start from bottom-left, canvas from top-left
+                        const left = x1 * viewport.scale;
+                        const top = (viewport.height - y2 * viewport.scale);
+                        const width = (x2 - x1) * viewport.scale;
+                        const height = (y2 - y1) * viewport.scale;
+                        
+                        element.style.left = left + 'px';
+                        element.style.top = top + 'px';
+                        element.style.width = width + 'px';
+                        element.style.height = height + 'px';
+                    }
+                    
+                    // Handle different annotation types
+                    switch (annotation.subtype) {
+                        case 'Link':
+                            element.className = 'linkAnnotation';
+                            element.title = annotation.url || annotation.dest || 'Link';
+                            
+                            // Handle link clicks
+                            element.addEventListener('click', (e) => {
+                                e.preventDefault();
+                                if (annotation.url) {
+                                    window.open(annotation.url, '_blank');
+                                } else if (annotation.dest) {
+                                    // Handle internal page links
+                                    console.log('Internal link to:', annotation.dest);
+                                    // You could implement page navigation here
+                                }
+                            });
+                            break;
+                            
+                        case 'Text':
+                        case 'Note':
+                            element.className = 'textAnnotation';
+                            if (annotation.contents) {
+                                element.title = annotation.contents;
+                            }
+                            break;
+                            
+                        case 'Highlight':
+                            element.className = 'highlightAnnotation';
+                            if (annotation.contents) {
+                                element.title = annotation.contents;
+                            }
+                            break;
+                            
+                        case 'FreeText':
+                            element.className = 'freeTextAnnotation';
+                            if (annotation.contents) {
+                                element.textContent = annotation.contents;
+                            }
+                            break;
+                            
+                        case 'Square':
+                            element.className = 'squareAnnotation';
+                            break;
+                            
+                        case 'Circle':
+                            element.className = 'circleAnnotation';
+                            break;
+                            
+                        default:
+                            element.className = 'genericAnnotation';
+                            break;
+                    }
+                    
+                    // Add common annotation attributes
+                    element.setAttribute('data-annotation-id', annotation.id || index);
+                    
+                    annotationLayer.appendChild(element);
+                });
+                
+            } catch (error) {
+                console.error('Error rendering annotation layer:', error);
             }
         }
         

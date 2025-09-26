@@ -5,7 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PDF Presenter</title>
     <script src="/socket.io/socket.io.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf_viewer.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf_viewer.min.js"></script>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -40,6 +42,13 @@
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
             position: relative;
         }
+        #viewerContainer {
+            overflow: auto;
+            position: relative;
+            width: 100%;
+            height: 600px;
+            background-color: #808080;
+        }
         .pdf-viewer {
             position: relative;
             display: inline-block;
@@ -62,12 +71,9 @@
             background-color: #6c757d;
             cursor: not-allowed;
         }
-        #pdfFrame {
+        #viewer {
             width: 100%;
-            height: 600px;
-            border: 1px solid #ddd;
-            margin-top: 20px;
-            border-radius: 4px;
+            height: 100%;
         }
         .status {
             padding: 10px;
@@ -113,7 +119,9 @@
         </div>
 
         <div class="pdf-container">
-            <iframe id="pdfFrame" style="display: none;"></iframe>
+            <div id="viewerContainer" style="display: none;">
+                <div id="viewer" class="pdfViewer"></div>
+            </div>
         </div>
     </div>
 
@@ -124,6 +132,55 @@
         let totalPages = 1;
         let isAuthenticated = false;
         let currentPassphrase = null;
+        
+        // PDF.js viewer setup
+        let pdfViewer = null;
+        let pdfDocument = null;
+        let eventBus = null;
+        let pdfLinkService = null;
+        let pdfFindController = null;
+        let pdfScriptingManager = null;
+        
+        // Initialize PDF.js viewer
+        function initPDFViewer() {
+            if (!pdfjsLib.getDocument || !pdfjsViewer.PDFViewer) {
+                alert("PDF.js library not loaded properly");
+                return;
+            }
+            
+            pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+            
+            const container = document.getElementById("viewerContainer");
+            eventBus = new pdfjsViewer.EventBus();
+            
+            pdfLinkService = new pdfjsViewer.PDFLinkService({ eventBus });
+            pdfFindController = new pdfjsViewer.PDFFindController({ eventBus, linkService: pdfLinkService });
+            
+            const SANDBOX_BUNDLE_SRC = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.sandbox.min.js";
+            pdfScriptingManager = new pdfjsViewer.PDFScriptingManager({ eventBus, sandboxBundleSrc: SANDBOX_BUNDLE_SRC });
+            
+            pdfViewer = new pdfjsViewer.PDFViewer({
+                container,
+                eventBus,
+                linkService: pdfLinkService,
+                findController: pdfFindController,
+                scriptingManager: pdfScriptingManager,
+            });
+            
+            pdfLinkService.setViewer(pdfViewer);
+            pdfScriptingManager.setViewer(pdfViewer);
+            
+            eventBus.on("pagesinit", function () {
+                pdfViewer.currentScaleValue = "page-width";
+            });
+            
+            eventBus.on("pagechanging", function(evt) {
+                currentPage = evt.pageNumber;
+                updatePageInfo();
+                updateButtons();
+                socket.emit('page_change', { page: currentPage });
+            });
+        }
 
         function authenticate() {
             const passphrase = document.getElementById('passphraseInput').value;
@@ -174,60 +231,56 @@
             totalPages = '?'; // Will be updated after PDF loads
             
             // Use PDF.js to get page count only
-            pdfjsLib.getDocument(url).promise.then(pdf => {
+            if (!pdfViewer) {
+                initPDFViewer();
+            }
+            
+            const loadingTask = pdfjsLib.getDocument({
+                url: url,
+                cMapUrl: "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/",
+                cMapPacked: true,
+                enableXfa: true,
+            });
+            
+            loadingTask.promise.then(pdf => {
+                pdfDocument = pdf;
                 totalPages = pdf.numPages;
                 console.log('PDF loaded with', totalPages, 'pages');
+                
+                pdfViewer.setDocument(pdfDocument);
+                pdfLinkService.setDocument(pdfDocument, null);
+                
+                document.getElementById('viewerContainer').style.display = 'block';
+                
                 updatePageInfo();
                 updateButtons();
                 
-                // Send PDF info including page count to viewers
-                socket.emit('set_pdf', { 
-                    pdfUrl: url, 
-                });
+                socket.emit('set_pdf', { pdfUrl: url });
             }).catch(error => {
-                console.error('Error loading PDF for page count:', error);
-                showStatus('Error analyzing PDF: ' + error.message, 'error');
-                totalPages = 1; // Fallback
+                console.error('Error loading PDF:', error);
+                showStatus('Error loading PDF: ' + error.message, 'error');
+                totalPages = 1;
             });
-            
-            // Set up iframe display
-            const iframe = document.getElementById('pdfFrame');
-            iframe.src = url + '#page=' + currentPage;
-            iframe.style.display = 'block';
-            
-            // Add error handling for iframe
-            iframe.onload = function() {
-                console.log('PDF iframe loaded successfully');
-            };
-            
-            iframe.onerror = function() {
-                showStatus('Error loading PDF in viewer', 'error');
-            };
             
             updatePageInfo();
             updateButtons();
         }
 
         function renderPage(pageNum) {
-            if (!currentPdfUrl) return;
+            if (!pdfViewer || !pdfDocument) return;
             
-            // Validate page number against actual PDF page count
             if (pageNum < 1 || (totalPages !== '?' && pageNum > totalPages)) {
                 showStatus(`Invalid page number: ${pageNum}. Valid range: 1-${totalPages}`, 'error');
                 return;
             }
             
-            const iframe = document.getElementById('pdfFrame');
-            iframe.src = currentPdfUrl + '#page=' + pageNum;
+            pdfViewer.currentPageNumber = pageNum;
         }
 
         function previousPage() {
             if (currentPage <= 1) return;
             currentPage--;
             renderPage(currentPage);
-            socket.emit('page_change', { page: currentPage });
-            updatePageInfo();
-            updateButtons();
         }
 
         function nextPage() {
@@ -237,9 +290,6 @@
             }
             currentPage++;
             renderPage(currentPage);
-            socket.emit('page_change', { page: currentPage });
-            updatePageInfo();
-            updateButtons();
         }
 
         function goToPage() {
@@ -250,9 +300,6 @@
             if (page >= 1 && page <= maxPage) {
                 currentPage = page;
                 renderPage(currentPage);
-                socket.emit('page_change', { page: currentPage });
-                updatePageInfo();
-                updateButtons();
                 pageInput.value = '';
             } else {
                 showStatus(`Please enter a valid page number (1-${maxPage})`, 'error');
@@ -302,9 +349,18 @@
         socket.on('pdf_status', (data) => {
             if (data.pdfUrl) {
                 loadPDF(data.pdfUrl);
-                currentPage = data.currentPage;
+                if (data.currentPage) {
+                    currentPage = data.currentPage;
+                    renderPage(currentPage);
+                }
             }
         });
+        
+        window.authenticate = authenticate;
+        window.uploadPDF = uploadPDF;
+        window.previousPage = previousPage;
+        window.nextPage = nextPage;
+        window.goToPage = goToPage;
 
         document.getElementById('passphraseInput').addEventListener('keypress', function(e) {
             if (e.key === 'Enter') {
